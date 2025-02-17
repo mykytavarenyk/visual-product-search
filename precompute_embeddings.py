@@ -3,14 +3,17 @@ import pickle
 from PIL import Image, UnidentifiedImageError
 import torch
 import clip
+import numpy as np
+from sklearn.cluster import KMeans
+from sklearn.linear_model import LogisticRegression
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 model, preprocess = clip.load("ViT-B/32", device=device)
 model.eval()
 
-# Update dataset_dir to point to your image folder
 dataset_dir = os.path.join("data", "dataset", "test_task_data")
-embeddings_dir = os.path.join("data", "embeddings")
+artifacts_dir = os.path.join("data", "artifacts")
+os.makedirs(artifacts_dir, exist_ok=True)
 
 embeddings = []
 product_info = []
@@ -26,14 +29,29 @@ for filename in os.listdir(dataset_dir):
         image_input = preprocess(image).unsqueeze(0).to(device)
         with torch.no_grad():
             embedding = model.encode_image(image_input)
-        embeddings.append(embedding.cpu().numpy().flatten())
+        embedding_np = embedding.cpu().numpy().flatten()
+        embeddings.append(embedding_np)
         product_info.append({"image_path": image_path, "filename": filename})
-        
-os.makedirs(embeddings_dir, exist_ok=True)
-with open(os.path.join(embeddings_dir, "dataset_embeddings.pkl"), "wb") as f:
+
+embeddings = np.array(embeddings)
+
+n_clusters = 5
+kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+cluster_labels = kmeans.fit_predict(embeddings)
+
+clf = LogisticRegression(max_iter=1000, random_state=42)
+clf.fit(embeddings, cluster_labels)
+
+with open(os.path.join(artifacts_dir, "embeddings.pkl"), "wb") as f:
     pickle.dump(embeddings, f)
 
-with open(os.path.join(embeddings_dir, "product_info.pkl"), "wb") as f:
+with open(os.path.join(artifacts_dir, "product_info.pkl"), "wb") as f:
     pickle.dump(product_info, f)
 
-print("Embeddings have been computed and saved successfully!")
+with open(os.path.join(artifacts_dir, "kmeans_model.pkl"), "wb") as f:
+    pickle.dump(kmeans, f)
+
+with open(os.path.join(artifacts_dir, "classifier.pkl"), "wb") as f:
+    pickle.dump(clf, f)
+
+print("Artifacts saved successfully!")
